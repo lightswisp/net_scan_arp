@@ -40,6 +40,7 @@ def search_vendor(mac)
 	if !vendor.empty?
 		return vendor.join.split("\t")[-1].chomp
 	end
+	
 	csrf_url = URI.parse("https://dnschecker.org/ajax_files/gen_csrf.php?upd=#{Random.new.rand(2000)}.9530811625832")
 	csrf_http = Net::HTTP.new(csrf_url.host, csrf_url.port)
 	csrf_http.use_ssl = true
@@ -57,13 +58,21 @@ def search_vendor(mac)
 	req["csrftoken"] = csrf
 	req["referer"] = "https://dnschecker.org/mac-lookup.php?query=#{mac}"
 	res = https.request(req)
-	data = JSON.parse(res.body)["result"][0]["name"]
-	return data || "Unknown device"
-	#return "Unknown device"
+	data = JSON.parse(res.body)
+	
+	if data["errors"].empty?
+		return data["result"][0]["name"]
+	end
+
+	return "Unknown device"
 end
 
 
 def main()
+	if(Process.uid != 0)
+		puts "You must run this with root privileges via sudo!".red
+		return
+	end
 
 	interfaces = Socket.getifaddrs
 	interfaces.reject!{|i| !i.addr.ipv4?}.reject!{|i| i.addr.ipv4_loopback?}.each.with_index do |i, j|
@@ -83,13 +92,12 @@ def main()
 			#if(system("arping -I wlp2s0 -c 1 #{ip.to_s} > /dev/null") == true)
 			if($?.exitstatus == 0)
 				alive_addr_list.append(ip.to_s)
-				addresses = command.match(/\d+\.\d+\.\d+\.\d+ \[.+\]/).to_s.split(" ")
-				ip = addresses[0]
-				mac = addresses[1]
+
+				mac = command.match(/([a-fA-F0-9]{2}:){5}([a-fA-F0-9]{2})/).to_s.upcase
+				ip = command.match(/\d+\.\d+\.\d+\.\d+/).to_s
 				vendor = search_vendor(mac)
 				
 				puts "#{ip} #{mac} is alive! (#{vendor})"
-				#puts "#{command.match(/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\s\[.*\]/).to_s} is alive!".green
 
 			elsif ARGV[0] == "-D"
 				puts "#{ip.to_s} seems to be dead!".red
